@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/task_provider.dart';
+import '../services/sync_service.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_dialog.dart';
 import '../widgets/delete_confirm_dialog.dart';
@@ -10,11 +11,11 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<TaskProvider>();
-    final tasks = provider.tasks;
-    final total = provider.totalTasks;
+    final provider  = context.watch<TaskProvider>();
+    final tasks     = provider.tasks;
+    final total     = provider.totalTasks;
     final completed = provider.completedTasks;
-    final progress = total > 0 ? completed / total : 0.0;
+    final progress  = total > 0 ? completed / total : 0.0;
 
     return Scaffold(
       body: SafeArea(
@@ -25,7 +26,7 @@ class HomeScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               child: Column(
                 children: [
-                  // Header
+                  // ── Header ───────────────────────────────────
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -55,6 +56,11 @@ class HomeScreen extends StatelessWidget {
                           ],
                         ),
                       ),
+                      // Sync status icon
+                      _SyncButton(
+                        status: provider.syncStatus,
+                        onTap: () => provider.manualSync(),
+                      ),
                       IconButton(
                         onPressed: () =>
                             context.read<TaskProvider>().toggleTheme(),
@@ -63,14 +69,12 @@ class HomeScreen extends StatelessWidget {
                               ? Icons.light_mode_outlined
                               : Icons.dark_mode_outlined,
                         ),
-                        style: IconButton.styleFrom(
-                          shape: const CircleBorder(),
-                        ),
+                        style: IconButton.styleFrom(shape: const CircleBorder()),
                       ),
                     ],
                   ),
 
-                  // Progress bar
+                  // ── Progress bar ─────────────────────────────
                   if (total > 0) ...[
                     const SizedBox(height: 16),
                     ClipRRect(
@@ -78,25 +82,30 @@ class HomeScreen extends StatelessWidget {
                       child: LinearProgressIndicator(
                         value: progress,
                         minHeight: 6,
-                        backgroundColor: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xFF23272F)
-                            : const Color(0xFFEEEFF2),
+                        backgroundColor:
+                            Theme.of(context).brightness == Brightness.dark
+                                ? const Color(0xFF23272F)
+                                : const Color(0xFFEEEFF2),
                       ),
                     ),
                   ],
 
                   const SizedBox(height: 16),
 
-                  // Toolbar
+                  // ── Toolbar ──────────────────────────────────
                   Row(
                     children: [
                       OutlinedButton.icon(
                         onPressed: () => context
                             .read<TaskProvider>()
                             .setSortByDate(!provider.sortByDate),
-                        icon: Icon(Icons.swap_vert, size: 16,color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,),
+                        icon: Icon(
+                          Icons.swap_vert,
+                          size: 16,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant,
+                        ),
                         label: Text(
                           provider.sortByDate ? 'By due date' : 'By created',
                           style: TextStyle(
@@ -111,7 +120,8 @@ class HomeScreen extends StatelessWidget {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 18, horizontal: 14),
                         ),
                       ),
                       const Spacer(),
@@ -128,7 +138,8 @@ class HomeScreen extends StatelessWidget {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 18, horizontal: 14),
                         ),
                       ),
                     ],
@@ -136,7 +147,7 @@ class HomeScreen extends StatelessWidget {
 
                   const SizedBox(height: 8),
 
-                  // Task list or empty state
+                  // ── Task list / empty state ───────────────────
                   Expanded(
                     child: tasks.isEmpty
                         ? _EmptyState(
@@ -183,6 +194,53 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
+
+// ── Sync status button ────────────────────────────────────────
+
+class _SyncButton extends StatelessWidget {
+  final SyncStatus status;
+  final VoidCallback onTap;
+
+  const _SyncButton({required this.status, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme;
+    switch (status) {
+      case SyncStatus.syncing:
+        return Padding(
+          padding: const EdgeInsets.all(10),
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: color.primary,
+            ),
+          ),
+        );
+      case SyncStatus.error:
+        return IconButton(
+          tooltip: 'Sync failed — tap to retry',
+          icon: Icon(Icons.sync_problem_outlined,
+              color: color.error, size: 20),
+          onPressed: onTap,
+          style: IconButton.styleFrom(shape: const CircleBorder()),
+        );
+      case SyncStatus.success:
+      case SyncStatus.idle:
+        return IconButton(
+          tooltip: 'Sync now',
+          icon: Icon(Icons.sync_outlined,
+              color: color.onSurfaceVariant, size: 20),
+          onPressed: onTap,
+          style: IconButton.styleFrom(shape: const CircleBorder()),
+        );
+    }
+  }
+}
+
+// ── Empty state ───────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
   final VoidCallback onAdd;
@@ -232,7 +290,8 @@ class _EmptyState extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
+              padding:
+                  const EdgeInsets.symmetric(vertical: 18, horizontal: 14),
             ),
           ),
         ],
