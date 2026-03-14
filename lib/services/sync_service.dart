@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'local_db.dart';
 import '../models/task.dart';
 
 // ── Configuration ─────────────────────────────────────────────
-const _baseUrl = 'https://maxime-anterion.com/api/sync.php';
-const _apiKey  = '7fK2a9Qm4Zx1T8pL6sD3wV0bH5yN9cRA';
+const String _baseUrl = 'https://maxime-anterion.com/api/sync.php';
+late final String _apiKey;
 // ─────────────────────────────────────────────────────────────
 
 enum SyncStatus { idle, syncing, success, error }
@@ -29,12 +30,20 @@ class SyncService {
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
  
   Future<void> init() async {
+    // Load environment variables
+    await dotenv.load(fileName: ".env");
+    _apiKey = dotenv.env['API_KEY'] ?? '';
+    
+    if (_apiKey.isEmpty) {
+      throw Exception('API_KEY not found in environment variables');
+    }
+
     // On first install (empty local DB) pull from server to populate.
     // Otherwise skip startup pull — local data is the source of truth until
     // the user explicitly syncs or makes a change.
     final localTasks = await LocalDb.instance.getAllActiveTasks();
     if (localTasks.isEmpty) await pull();
- 
+
     _connectivitySub = Connectivity().onConnectivityChanged.listen((results) async {
       if (results.any((r) => r != ConnectivityResult.none)) await pull();
     });

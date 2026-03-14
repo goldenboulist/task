@@ -66,7 +66,13 @@ lib/
    flutter pub get
    ```
 
-3. Run the application:
+3. Configure environment variables:
+   ```bash
+   # Create a .env file in the project root
+   API_KEY=your_api_key_here
+   ```
+
+4. Run the application:
    ```bash
    flutter run
    ```
@@ -117,6 +123,8 @@ lib/
 - `intl: ^0.19.0` - Internationalization and date formatting
 - `flutter_local_notifications: ^18.0.0` - Local notifications
 - `connectivity_plus: ^6.0.3` - Network connectivity monitoring
+- `flutter_dotenv: ^5.1.0` - Environment variable management
+- `http: ^1.2.1` - HTTP client for API communication
 
 ### Database Schema
 
@@ -128,6 +136,29 @@ The application uses SQLite with the following task structure:
 - `isCompleted`: Completion status
 - `createdAt`: Creation timestamp
 - `updatedAt`: Last modification timestamp
+
+### Environment Configuration
+
+The application uses environment variables for secure API configuration:
+
+#### Environment Variables
+Create a `.env` file in the project root with the following variables:
+
+```env
+API_KEY=your_api_key_here
+```
+
+#### API Integration
+- **Sync Service**: Automatic synchronization with remote server
+- **Connectivity Monitoring**: Real-time network status detection
+- **Conflict Resolution**: Local-first approach with server sync
+- **Security**: API keys stored securely in environment variables
+
+#### Sync Features
+- **Automatic Sync**: Triggers on connectivity changes
+- **Manual Sync**: User-initiated synchronization
+- **Background Sync**: Seamless data synchronization
+- **Error Handling**: Robust error recovery and retry mechanisms
 
 ### Contributing
 
