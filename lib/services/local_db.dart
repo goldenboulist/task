@@ -27,112 +27,39 @@ class LocalDb {
             due_date    TEXT,
             completed   INTEGER NOT NULL DEFAULT 0,
             created_at  TEXT NOT NULL,
-            updated_at  TEXT NOT NULL,
-            synced      INTEGER NOT NULL DEFAULT 0,
-            is_deleted  INTEGER NOT NULL DEFAULT 0
-          )
-        ''');
-        await db.execute('''
-          CREATE TABLE meta (
-            key   TEXT PRIMARY KEY,
-            value TEXT
+            updated_at  TEXT NOT NULL
           )
         ''');
       },
     );
   }
 
-  // ── Tasks ─────────────────────────────────────────────────────
-
   Future<List<Task>> getAllActiveTasks() async {
     final d = await db;
-    final rows = await d.query(
-      'tasks',
-      where: 'is_deleted = 0',
-      orderBy: 'created_at DESC',
-    );
-    return rows.map(Task.fromMap).toList();
-  }
-
-  Future<List<Task>> getPendingTasks() async {
-    final d = await db;
-    final rows = await d.query('tasks', where: 'synced = 0 AND is_deleted = 0');
+    final rows = await d.query('tasks', orderBy: 'created_at DESC');
     return rows.map(Task.fromMap).toList();
   }
 
   Future<void> upsertTask(Task task) async {
     final d = await db;
-    await d.insert(
-      'tasks',
-      task.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await d.insert('tasks', task.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> upsertAll(List<Task> tasks) async {
+  Future<void> deleteTask(String id) async {
     final d = await db;
-    final batch = d.batch();
-    for (final t in tasks) {
-      batch.insert('tasks', t.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
-    }
-    await batch.commit(noResult: true);
+    await d.delete('tasks', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Merge tasks arriving from the server using last-write-wins on updated_at.
-  Future<void> mergeServerTasks(List<Task> serverTasks) async {
+  /// Called after a successful sync — replace everything with the server list.
+  Future<void> replaceAllTasks(List<Task> tasks) async {
     final d = await db;
-    final batch = d.batch();
-    for (final remote in serverTasks) {
-      final rows = await d.query('tasks', where: 'id = ?', whereArgs: [remote.id]);
-      if (rows.isEmpty) {
-        // New task from server — insert it (marked synced)
-        batch.insert('tasks', remote.toMap(),
+    await d.transaction((txn) async {
+      await txn.delete('tasks');
+      for (final t in tasks) {
+        await txn.insert('tasks', t.toMap(),
             conflictAlgorithm: ConflictAlgorithm.replace);
-      } else {
-        final local = Task.fromMap(rows.first);
-        // Server wins only if its timestamp is newer
-        if (remote.updatedAt.isAfter(local.updatedAt)) {
-          batch.insert('tasks', remote.toMap(),
-              conflictAlgorithm: ConflictAlgorithm.replace);
-        }
       }
-    }
-    await batch.commit(noResult: true);
-  }
-
-  Future<void> markSynced(List<String> ids) async {
-    if (ids.isEmpty) return;
-    final d = await db;
-    final batch = d.batch();
-    for (final id in ids) {
-      batch.update('tasks', {'synced': 1},
-          where: 'id = ?', whereArgs: [id]);
-    }
-    await batch.commit(noResult: true);
-  }
-
-  /// Clean up tasks that are both synced and deleted (no longer needed)
-  Future<void> cleanupSyncedDeletedTasks() async {
-    final d = await db;
-    await d.delete('tasks', where: 'synced = 1 AND is_deleted = 1');
-  }
-
-  // ── Meta (last_sync timestamp) ────────────────────────────────
-
-  Future<String?> getMeta(String key) async {
-    final d = await db;
-    final rows = await d.query('meta', where: 'key = ?', whereArgs: [key]);
-    if (rows.isEmpty) return null;
-    return rows.first['value'] as String?;
-  }
-
-  Future<void> setMeta(String key, String value) async {
-    final d = await db;
-    await d.insert(
-      'meta',
-      {'key': key, 'value': value},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    });
   }
 }

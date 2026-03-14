@@ -1,14 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/task.dart';
 import '../services/local_db.dart';
 import '../services/sync_service.dart';
 
-const _themeKey   = 'theme';
-const _sortKey    = 'sortByDate';
-// Legacy migration key
-const _legacyKey  = 'task-manager-tasks';
+const _themeKey  = 'theme';
+const _sortKey   = 'sortByDate';
+const _legacyKey = 'task-manager-tasks'; // one-time migration
 
 class TaskProvider extends ChangeNotifier {
   List<Task> _tasks = [];
@@ -19,11 +18,10 @@ class TaskProvider extends ChangeNotifier {
   bool get sortByDate  => _sortByDate;
   bool get darkMode    => _darkMode;
   bool get initialized => _initialized;
+  SyncStatus get syncStatus => SyncService.instance.status;
 
   int get totalTasks     => _tasks.length;
   int get completedTasks => _tasks.where((t) => t.completed).length;
-
-  SyncStatus get syncStatus => SyncService.instance.status;
 
   List<Task> get tasks {
     final sorted = [..._tasks];
@@ -44,19 +42,18 @@ class TaskProvider extends ChangeNotifier {
     return sorted;
   }
 
-  // ── Initialise ────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _darkMode  = prefs.getString(_themeKey) == 'dark';
+    _darkMode   = prefs.getString(_themeKey) == 'dark';
     _sortByDate = prefs.getBool(_sortKey) ?? true;
 
-    // One-time migration from SharedPreferences JSON → SQLite
+    // One-time migration from SharedPreferences → SQLite
     final legacy = prefs.getString(_legacyKey);
     if (legacy != null) {
       try {
-        final oldTasks = Task.legacyListFromJson(legacy);
-        for (final t in oldTasks) {
+        for (final t in Task.legacyListFromJson(legacy)) {
           await LocalDb.instance.upsertTask(t);
         }
       } catch (_) {}
@@ -64,8 +61,8 @@ class TaskProvider extends ChangeNotifier {
     }
 
     await _reload();
-
-    // Listen to sync events so UI can refresh after background sync
+    
+    // Refresh UI whenever a sync completes
     SyncService.instance.statusStream.listen((status) async {
       if (status == SyncStatus.success) {
         await _reload();
@@ -73,45 +70,41 @@ class TaskProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Start connectivity-aware background sync
     await SyncService.instance.init();
 
     _initialized = true;
     notifyListeners();
   }
 
-  /// Reload the task list from SQLite into memory.
   Future<void> _reload() async {
     _tasks = await LocalDb.instance.getAllActiveTasks();
     notifyListeners();
   }
 
-  // ── CRUD ──────────────────────────────────────────────────────
+  // ── CRUD — write locally first, then sync ─────────────────────
 
   Future<void> addTask(String name, String description, DateTime? dueDate) async {
     final now = DateTime.now();
     final task = Task(
-      id:          const Uuid().v4(),
-      name:        name,
+      id: const Uuid().v4(),
+      name: name,
       description: description,
-      dueDate:     dueDate,
-      completed:   false,
-      createdAt:   now,
-      updatedAt:   now,
-      synced:      false,
+      dueDate: dueDate,
+      completed: false,
+      createdAt: now,
+      updatedAt: now,
     );
     await LocalDb.instance.upsertTask(task);
     await _reload();
     _backgroundSync();
   }
 
-  Future<void> editTask(
-      String id, String name, String description, DateTime? dueDate) async {
+  Future<void> editTask(String id, String name, String description, DateTime? dueDate) async {
     final existing = _tasks.firstWhere((t) => t.id == id);
     final updated = existing.copyWith(
-      name:        name,
+      name: name,
       description: description,
-      dueDate:     dueDate,
+      dueDate: dueDate,
       clearDueDate: dueDate == null,
     );
     await LocalDb.instance.upsertTask(updated);
@@ -120,10 +113,7 @@ class TaskProvider extends ChangeNotifier {
   }
 
   Future<void> deleteTask(String id) async {
-    final existing = _tasks.firstWhere((t) => t.id == id);
-    // Soft-delete so it propagates to other devices via sync
-    final deleted = existing.copyWith(isDeleted: true);
-    await LocalDb.instance.upsertTask(deleted);
+    await LocalDb.instance.deleteTask(id);
     await _reload();
     _backgroundSync();
   }
@@ -136,8 +126,7 @@ class TaskProvider extends ChangeNotifier {
     _backgroundSync();
   }
 
-  /// Force a manual sync (e.g. pull-to-refresh).
-  Future<void> manualSync() => SyncService.instance.sync();
+  Future<void> manualSync() => SyncService.instance.pull();
 
   // ── Preferences ───────────────────────────────────────────────
 
@@ -155,9 +144,7 @@ class TaskProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Helpers ───────────────────────────────────────────────────
-
   void _backgroundSync() {
-    SyncService.instance.sync().ignore();
+    SyncService.instance.push().ignore();
   }
 }

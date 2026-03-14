@@ -15,92 +15,132 @@ enum SyncStatus { idle, syncing, success, error }
 class SyncService {
   SyncService._();
   static final instance = SyncService._();
-
+ 
   final _statusController = StreamController<SyncStatus>.broadcast();
   Stream<SyncStatus> get statusStream => _statusController.stream;
-
+ 
   SyncStatus _status = SyncStatus.idle;
   SyncStatus get status => _status;
-
+ 
+  bool _isPulling  = false;
+  bool _isPushing  = false;
+  bool _pushQueued = false; // a push was requested while pull was running
+ 
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
-
-  /// Call once from main() after LocalDb is ready.
+ 
   Future<void> init() async {
-    // Sync immediately on start (if online)
-    await sync();
-
-    // Re-sync whenever connectivity is restored
-    _connectivitySub = Connectivity()
-        .onConnectivityChanged
-        .listen((results) async {
-      final online = results.any((r) => r != ConnectivityResult.none);
-      if (online) await sync();
+    // On first install (empty local DB) pull from server to populate.
+    // Otherwise skip startup pull — local data is the source of truth until
+    // the user explicitly syncs or makes a change.
+    final localTasks = await LocalDb.instance.getAllActiveTasks();
+    if (localTasks.isEmpty) await pull();
+ 
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) async {
+      if (results.any((r) => r != ConnectivityResult.none)) await pull();
     });
   }
-
+ 
   void dispose() {
     _connectivitySub?.cancel();
     _statusController.close();
   }
-
-  Future<void> sync() async {
-    if (_status == SyncStatus.syncing) return;
+ 
+  /// PULL — server → local. Never sends local data.
+  Future<List<Task>?> pull() async {
+    if (_isPulling) return null;
+ 
+    // If a push is in flight let it finish first, then pull
+    if (_isPushing) {
+      await _waitForPush();
+    }
+ 
+    _isPulling = true;
     _emit(SyncStatus.syncing);
-
     try {
-      final db = LocalDb.instance;
-
-      // 1. Collect unsynced local tasks
-      final pending = await db.getPendingTasks();
-
-      // 2. Get last successful sync timestamp
-      final lastSync = await db.getMeta('last_sync');
-
-      // 3. POST to server
-      final response = await http
-          .post(
-            Uri.parse(_baseUrl),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $_apiKey',
-            },
-            body: jsonEncode({
-              'last_sync': lastSync,
-              'tasks': pending.map((t) => t.toApiJson()).toList(),
-            }),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      print('Sync response: ${response.body}');
-      if (response.statusCode != 200) {
-        throw Exception('Server returned ${response.statusCode}');
-      }
-
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-
-      // 4. Merge server tasks (last-write-wins)
-      final serverTasks = (body['tasks'] as List<dynamic>)
-          .map((e) => Task.fromApiJson(e as Map<String, dynamic>))
-          .toList();
-      await db.mergeServerTasks(serverTasks);
-
-      // 5. Mark our pushed tasks as synced
-      if (pending.isNotEmpty) {
-        await db.markSynced(pending.map((t) => t.id).toList());
-      }
-
-      // 6. Clean up synced deleted tasks
-      await db.cleanupSyncedDeletedTasks();
-
-      // 7. Save server time as new last_sync
-      await db.setMeta('last_sync', body['server_time'] as String);
-
+      final response = await http.post(
+        Uri.parse(_baseUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_apiKey',
+        },
+        body: jsonEncode({'action': 'pull'}),
+      ).timeout(const Duration(seconds: 15));
+ 
+      if (response.statusCode != 200) throw Exception('${response.statusCode}');
+ 
+      final serverTasks = _parseTasks(response.body);
+      await LocalDb.instance.replaceAllTasks(serverTasks);
       _emit(SyncStatus.success);
+      return serverTasks;
     } catch (_) {
       _emit(SyncStatus.error);
+      return null;
+    } finally {
+      _isPulling = false;
+      // If a push was requested while we were pulling, run it now
+      if (_pushQueued) {
+        _pushQueued = false;
+        push();
+      }
     }
   }
-
+ 
+  /// PUSH — local → server diff → server returns authoritative list → local.
+  Future<List<Task>?> push() async {
+    // If a pull is running, queue the push for when it finishes
+    if (_isPulling) {
+      _pushQueued = true;
+      return null;
+    }
+    if (_isPushing) return null; // already pushing, skip duplicate
+ 
+    _isPushing = true;
+    _emit(SyncStatus.syncing);
+    try {
+      final localTasks = await LocalDb.instance.getAllActiveTasks();
+ 
+      final response = await http.post(
+        Uri.parse(_baseUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_apiKey',
+        },
+        body: jsonEncode({
+          'action': 'push',
+          'tasks': localTasks.map((t) => t.toApiJson()).toList(),
+        }),
+      ).timeout(const Duration(seconds: 15));
+ 
+      if (response.statusCode != 200) throw Exception('${response.statusCode}');
+ 
+      final serverTasks = _parseTasks(response.body);
+      await LocalDb.instance.replaceAllTasks(serverTasks);
+      _emit(SyncStatus.success);
+      return serverTasks;
+    } catch (_) {
+      _emit(SyncStatus.error);
+      return null;
+    } finally {
+      _isPushing = false;
+    }
+  }
+ 
+  // ── Helpers ───────────────────────────────────────────────────
+ 
+  List<Task> _parseTasks(String body) {
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    return (json['tasks'] as List<dynamic>)
+        .map((e) => Task.fromApiJson(e as Map<String, dynamic>))
+        .toList();
+  }
+ 
+  /// Wait until the current push finishes (poll every 100 ms).
+  Future<void> _waitForPush() async {
+    while (_isPushing) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+  }
+ 
   void _emit(SyncStatus s) {
     _status = s;
     _statusController.add(s);

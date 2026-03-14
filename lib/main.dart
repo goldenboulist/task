@@ -7,7 +7,7 @@ import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  
   // sqflite requires FFI on desktop platforms
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
