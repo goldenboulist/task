@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'providers/task_provider.dart';
+import 'providers/flash_provider.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
@@ -14,12 +15,18 @@ void main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
-  final provider = TaskProvider();
-  await provider.init();
+  final taskProvider = TaskProvider();
+  await taskProvider.init();
+
+  final flashProvider = FlashProvider();
+  await flashProvider.init();
 
   runApp(
-    ChangeNotifierProvider.value(
-      value: provider,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: taskProvider),
+        ChangeNotifierProvider.value(value: flashProvider),
+      ],
       child: const TaskApp(),
     ),
   );
@@ -92,6 +99,43 @@ class TaskApp extends StatelessWidget {
           }
           return Colors.transparent;
         }),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        surfaceTintColor: Colors.transparent,
+        backgroundColor:
+            isDark ? const Color(0xFF14181F) : Colors.white,
+        indicatorColor: const Color(0xFF3571E9).withValues(alpha: 0.15),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return TextStyle(
+            fontSize: 12,
+            fontWeight:
+                selected ? FontWeight.w600 : FontWeight.normal,
+            color: selected
+                ? const Color(0xFF3571E9)
+                : (isDark ? Colors.white60 : Colors.black54),
+          );
+        }),
+      ),
+      navigationRailTheme: NavigationRailThemeData(
+        backgroundColor:
+            isDark ? const Color(0xFF14181F) : Colors.white,
+        indicatorColor: const Color(0xFF3571E9).withValues(alpha: 0.12),
+        selectedIconTheme: const IconThemeData(
+          color: Color(0xFF3571E9),
+        ),
+        unselectedIconTheme: IconThemeData(
+          color: isDark ? Colors.white54 : Colors.black45,
+        ),
+        selectedLabelTextStyle: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF3571E9),
+        ),
+        unselectedLabelTextStyle: TextStyle(
+          fontSize: 12,
+          color: isDark ? Colors.white54 : Colors.black45,
+        ),
       ),
     );
   }
