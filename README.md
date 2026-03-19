@@ -14,6 +14,11 @@ A modern, cross-platform task management application built with Flutter. This ap
 - **Theme Support**: Toggle between dark and light themes for comfortable usage
 - **Data Persistence**: Reliable local storage using SQLite database
 - **Cross-Platform**: Runs on Android, iOS, Windows, macOS, and Linux
+- **Flashcard System**: Comprehensive learning tool with categories and study modes
+- **Interactive Cards**: Flip animations for question-answer learning
+- **Study Mode**: Focused learning environment with progress tracking
+- **Category Organization**: Color-coded categories for efficient content management
+- **Cloud Sync**: Synchronize flashcards across devices
 
 ## Technical Architecture
 
@@ -23,15 +28,25 @@ A modern, cross-platform task management application built with Flutter. This ap
 lib/
 ├── main.dart                      # Application entry point and theming
 ├── models/
-│   └── task.dart                  # Task data model with JSON serialization
+│   ├── task.dart                  # Task data model with JSON serialization
+│   ├── flash_card.dart            # Flashcard data model
+│   └── flash_category.dart        # Flashcard category model
 ├── providers/
-│   └── task_provider.dart         # State management using Provider pattern
+│   ├── task_provider.dart         # Task state management (Provider pattern)
+│   └── flash_provider.dart        # Flashcard state management
 ├── screens/
-│   └── home_screen.dart           # Main application interface
+│   ├── home_screen.dart           # Main task management interface
+│   ├── flash_screen.dart          # Flashcard category overview
+│   └── flash_deck_screen.dart     # Individual flashcard deck view
+├── services/
+│   ├── local_db.dart              # SQLite database operations
+│   └── sync_service.dart          # Cloud synchronization service
 └── widgets/
     ├── task_card.dart             # Individual task display component
     ├── task_form_dialog.dart      # Add/edit task dialog
-    └── delete_confirm_dialog.dart # Delete confirmation dialog
+    ├── delete_confirm_dialog.dart # Delete confirmation dialog
+    ├── flash_card_form_dialog.dart # Add/edit flashcard dialog
+    └── category_form_dialog.dart  # Add/edit category dialog
 ```
 
 ### Technology Stack
@@ -112,6 +127,51 @@ lib/
 - **Themes**: Switch between light and dark themes
 - **Preferences**: Settings are automatically saved and restored
 
+## Flashcard Learning System
+
+### Overview
+The application includes a comprehensive flashcard learning system designed for efficient memorization and knowledge retention. Perfect for students, professionals, and anyone looking to enhance their learning experience.
+
+### Key Features
+
+#### Category Management
+- **Color-Coded Organization**: Create categories with custom colors for visual distinction
+- **Responsive Grid Layout**: Adaptive display that works seamlessly across devices
+- **Card Count Tracking**: Real-time display of cards per category
+- **Quick Actions**: Edit and delete categories with intuitive menu controls
+
+#### Interactive Flashcards
+- **Flip Animations**: Smooth 3D flip animations to reveal answers
+- **Touch Interaction**: Tap to flip cards for engaging learning experience
+- **Visual Feedback**: Distinct styling for question and answer sides
+- **Edit Capability**: Modify card content directly from the deck view
+
+#### Study Mode
+- **Focused Learning Environment**: Distraction-free interface for concentrated study
+- **Progress Tracking**: Visual progress bar showing study session completion
+- **Shuffled Order**: Randomized card presentation to prevent memorization patterns
+- **Session Completion**: Summary screen with options to restart or exit
+
+#### Data Management
+- **Local Storage**: All flashcard data stored locally with SQLite
+- **Cloud Synchronization**: Sync categories and cards across devices
+- **Real-time Updates**: Immediate reflection of changes across all views
+- **Backup Security**: Automatic sync on connectivity changes
+
+### Usage Workflow
+
+1. **Create Categories**: Start by creating themed categories with custom colors
+2. **Add Flashcards**: Create question-answer pairs within each category
+3. **Study Sessions**: Launch study mode to review cards in randomized order
+4. **Track Progress**: Monitor completion and repeat sessions as needed
+5. **Sync Data**: Ensure your learning progress is backed up and synchronized
+
+### Learning Benefits
+- **Active Recall**: Promotes active memory retrieval through question-answer format
+- **Spaced Repetition**: Built-in system for reviewing content at optimal intervals
+- **Visual Learning**: Color-coded categories enhance memory association
+- **Portable Learning**: Access your study materials across all devices
+
 ## Development
 
 ### Key Dependencies
@@ -128,12 +188,29 @@ lib/
 
 ### Database Schema
 
-The application uses SQLite with the following task structure:
+The application uses SQLite with the following data structures:
+
+#### Task Structure
 - `id`: Unique identifier (UUID)
 - `title`: Task title
 - `description`: Task description (optional)
 - `dueDate`: Due date timestamp
 - `isCompleted`: Completion status
+- `createdAt`: Creation timestamp
+- `updatedAt`: Last modification timestamp
+
+#### Flashcard Structure
+- `id`: Unique identifier (UUID)
+- `categoryId`: Reference to parent category
+- `front`: Question/content for the front of card
+- `back`: Answer/content for the back of card
+- `createdAt`: Creation timestamp
+- `updatedAt`: Last modification timestamp
+
+#### Category Structure
+- `id`: Unique identifier (UUID)
+- `name`: Category display name
+- `colorValue`: Color theme for category (Material color)
 - `createdAt`: Creation timestamp
 - `updatedAt`: Last modification timestamp
 
