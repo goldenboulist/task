@@ -21,6 +21,12 @@ dependencies:
   flutter_local_notifications: ^18.0.0
   windows_notification: ^1.1.0
   flutter_dotenv: ^5.1.0
+  just_audio: ^0.9.40
+  audio_service: ^0.18.15
+  file_picker: ^8.1.4
+  path_provider: ^2.1.4
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: ^1.0.5
 
 dev_dependencies:
   flutter_test:

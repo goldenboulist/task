@@ -3,6 +3,8 @@ import 'package:path/path.dart';
 import '../models/task.dart';
 import '../models/flash_category.dart';
 import '../models/flash_card.dart';
+import '../models/song.dart';
+import '../models/playlist.dart';
 
 class LocalDb {
   LocalDb._();
@@ -19,15 +21,15 @@ class LocalDb {
     final path = join(await getDatabasesPath(), 'tasks.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, _) async {
         await _createV1(db);
         await _createV2(db);
+        await _createV3(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await _createV2(db);
-        }
+        if (oldVersion < 2) await _createV2(db);
+        if (oldVersion < 3) await _createV3(db);
       },
     );
   }
@@ -64,6 +66,37 @@ class LocalDb {
         back        TEXT NOT NULL,
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
+      )
+    ''');
+  }
+
+  Future<void> _createV3(Database db) async {
+    await db.execute('''
+      CREATE TABLE songs (
+        id          TEXT PRIMARY KEY,
+        title       TEXT NOT NULL,
+        artist      TEXT NOT NULL DEFAULT '',
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        local_path  TEXT,
+        synced      INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        updated_at  TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE playlists (
+        id         TEXT PRIMARY KEY,
+        name       TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE playlist_songs (
+        playlist_id TEXT NOT NULL,
+        song_id     TEXT NOT NULL,
+        added_at    TEXT NOT NULL,
+        PRIMARY KEY (playlist_id, song_id)
       )
     ''');
   }
@@ -152,9 +185,6 @@ class LocalDb {
     await d.delete('flash_cards', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Called after a successful flash sync — replace everything with the
-  /// server-authoritative lists. Cards are cleared before categories to
-  /// avoid any transient FK issues on platforms that enforce them.
   Future<void> replaceAllFlashData(
     List<FlashCategory> categories,
     List<FlashCard> cards,
@@ -172,5 +202,119 @@ class LocalDb {
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
+  }
+
+  // ── Songs ────────────────────────────────────────────────────
+
+  Future<List<Song>> getAllSongs() async {
+    final d = await db;
+    final rows = await d.query('songs', orderBy: 'title ASC');
+    return rows.map(Song.fromMap).toList();
+  }
+
+  Future<void> upsertSong(Song song) async {
+    final d = await db;
+    await d.insert('songs', song.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteSong(String id) async {
+    final d = await db;
+    await d.delete('playlist_songs', where: 'song_id = ?', whereArgs: [id]);
+    await d.delete('songs', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Replace all songs with the server-canonical list.
+  /// Callers must preserve localPath/synced before calling this.
+  Future<void> replaceAllSongs(List<Song> songs) async {
+    final d = await db;
+    await d.transaction((txn) async {
+      await txn.delete('songs');
+      for (final s in songs) {
+        await txn.insert('songs', s.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  // ── Playlists ─────────────────────────────────────────────────
+
+  Future<List<Playlist>> getAllPlaylists() async {
+    final d = await db;
+    final rows = await d.query('playlists', orderBy: 'name ASC');
+    return rows.map(Playlist.fromMap).toList();
+  }
+
+  Future<void> upsertPlaylist(Playlist playlist) async {
+    final d = await db;
+    await d.insert('playlists', playlist.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deletePlaylist(String id) async {
+    final d = await db;
+    await d.delete('playlist_songs',
+        where: 'playlist_id = ?', whereArgs: [id]);
+    await d.delete('playlists', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> replaceAllPlaylists(
+    List<Playlist> playlists,
+    Map<String, List<String>> playlistSongs,
+  ) async {
+    final d = await db;
+    await d.transaction((txn) async {
+      await txn.delete('playlist_songs');
+      await txn.delete('playlists');
+      final now = DateTime.now().toUtc().toIso8601String();
+      for (final pl in playlists) {
+        await txn.insert('playlists', pl.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace);
+        final sids = playlistSongs[pl.id] ?? [];
+        for (final sid in sids) {
+          await txn.insert(
+            'playlist_songs',
+            {'playlist_id': pl.id, 'song_id': sid, 'added_at': now},
+            conflictAlgorithm: ConflictAlgorithm.ignore,
+          );
+        }
+      }
+    });
+  }
+
+  // ── Playlist ↔ Song junction ──────────────────────────────────
+
+  Future<List<String>> getSongIdsForPlaylist(String playlistId) async {
+    final d = await db;
+    final rows = await d.query(
+      'playlist_songs',
+      where: 'playlist_id = ?',
+      whereArgs: [playlistId],
+      orderBy: 'added_at ASC',
+    );
+    return rows.map((r) => r['song_id'] as String).toList();
+  }
+
+  Future<void> addSongToPlaylist(String playlistId, String songId) async {
+    final d = await db;
+    await d.insert(
+      'playlist_songs',
+      {
+        'playlist_id': playlistId,
+        'song_id': songId,
+        'added_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<void> removeSongFromPlaylist(
+      String playlistId, String songId) async {
+    final d = await db;
+    await d.delete(
+      'playlist_songs',
+      where: 'playlist_id = ? AND song_id = ?',
+      whereArgs: [playlistId, songId],
+    );
   }
 }

@@ -5,7 +5,9 @@ import '../services/sync_service.dart';
 import '../widgets/task_card.dart';
 import '../widgets/task_form_dialog.dart';
 import '../widgets/delete_confirm_dialog.dart';
+import '../widgets/mini_player_bar.dart';
 import 'flash_screen.dart';
+import 'music_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,25 +23,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final taskProvider = context.watch<TaskProvider>();
 
-    // On wide screens (desktop/tablet), use a side navigation rail
-    // On narrow screens (mobile), use bottom navigation
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 600;
-
-        if (isWide) {
-          return _WideLayout(
-            selectedIndex: _selectedIndex,
-            onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-            taskProvider: taskProvider,
-          );
-        }
-
-        return _NarrowLayout(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-          taskProvider: taskProvider,
-        );
+        return isWide
+            ? _WideLayout(
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (i) =>
+                    setState(() => _selectedIndex = i),
+                taskProvider: taskProvider,
+              )
+            : _NarrowLayout(
+                selectedIndex: _selectedIndex,
+                onDestinationSelected: (i) =>
+                    setState(() => _selectedIndex = i),
+                taskProvider: taskProvider,
+              );
       },
     );
   }
@@ -61,11 +60,20 @@ class _NarrowLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: selectedIndex,
-        children: const [
-          _TasksTab(),
-          FlashScreen(),
+      body: Column(
+        children: [
+          Expanded(
+            child: IndexedStack(
+              index: selectedIndex,
+              children: const [
+                _TasksTab(),
+                FlashScreen(),
+                MusicScreen(),
+              ],
+            ),
+          ),
+          // Mini player sits above bottom navigation
+          const MiniPlayerBar(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -82,6 +90,11 @@ class _NarrowLayout extends StatelessWidget {
             icon: Icon(Icons.style_outlined),
             selectedIcon: Icon(Icons.style_rounded),
             label: 'Flash Cards',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.library_music_outlined),
+            selectedIcon: Icon(Icons.library_music_rounded),
+            label: 'Music',
           ),
         ],
       ),
@@ -110,7 +123,7 @@ class _WideLayout extends StatelessWidget {
     return Scaffold(
       body: Row(
         children: [
-          // ── Side rail ────────────────────────────────────
+          // ── Side rail ─────────────────────────────────────
           NavigationRail(
             selectedIndex: selectedIndex,
             onDestinationSelected: onDestinationSelected,
@@ -146,21 +159,31 @@ class _WideLayout extends StatelessWidget {
                 selectedIcon: Icon(Icons.style_rounded),
                 label: Text('Cards'),
               ),
+              NavigationRailDestination(
+                icon: Icon(Icons.library_music_outlined),
+                selectedIcon: Icon(Icons.library_music_rounded),
+                label: Text('Music'),
+              ),
             ],
           ),
-          // Vertical divider
-          VerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: cs.outline,
-          ),
-          // ── Content area ─────────────────────────────────
+          VerticalDivider(width: 1, thickness: 1, color: cs.outline),
+
+          // ── Content area ──────────────────────────────────
           Expanded(
-            child: IndexedStack(
-              index: selectedIndex,
-              children: const [
-                _TasksTab(showThemeToggle: false),
-                FlashScreen(),
+            child: Column(
+              children: [
+                Expanded(
+                  child: IndexedStack(
+                    index: selectedIndex,
+                    children: const [
+                      _TasksTab(showThemeToggle: false),
+                      FlashScreen(),
+                      MusicScreen(),
+                    ],
+                  ),
+                ),
+                // Mini player above the bottom edge on desktop
+                const MiniPlayerBar(),
               ],
             ),
           ),

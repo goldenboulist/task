@@ -4,16 +4,27 @@ import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'providers/task_provider.dart';
 import 'providers/flash_provider.dart';
+import 'providers/music_provider.dart';
+import 'services/music_audio_handler.dart';
 import 'screens/home_screen.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // sqflite requires FFI on desktop platforms
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+
+    JustAudioMediaKit.ensureInitialized(
+      android: false, iOS: false, macOS: false,
+      windows: true, linux: true,
+    );
   }
+
+  // Initialise the background audio handler BEFORE runApp.
+  final audioHandler = await initAudioHandler();
 
   final taskProvider = TaskProvider();
   await taskProvider.init();
@@ -21,11 +32,15 @@ void main() async {
   final flashProvider = FlashProvider();
   await flashProvider.init();
 
+  final musicProvider = MusicProvider(audioHandler: audioHandler);
+  await musicProvider.init();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: taskProvider),
         ChangeNotifierProvider.value(value: flashProvider),
+        ChangeNotifierProvider.value(value: musicProvider),
       ],
       child: const TaskApp(),
     ),
@@ -121,9 +136,7 @@ class TaskApp extends StatelessWidget {
         backgroundColor:
             isDark ? const Color(0xFF14181F) : Colors.white,
         indicatorColor: const Color(0xFF3571E9).withValues(alpha: 0.12),
-        selectedIconTheme: const IconThemeData(
-          color: Color(0xFF3571E9),
-        ),
+        selectedIconTheme: const IconThemeData(color: Color(0xFF3571E9)),
         unselectedIconTheme: IconThemeData(
           color: isDark ? Colors.white54 : Colors.black45,
         ),
