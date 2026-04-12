@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
@@ -10,7 +11,7 @@ import '../models/playlist.dart';
 import '../services/local_db.dart';
 import '../services/music_audio_handler.dart';
 import '../services/music_sync_service.dart';
-import '../services/sync_service.dart' show SyncStatus; // reuse the enum
+import '../services/sync_service.dart' show SyncStatus;
 
 class MusicProvider extends ChangeNotifier {
   final MusicAudioHandler audioHandler;
@@ -19,13 +20,13 @@ class MusicProvider extends ChangeNotifier {
   List<Playlist> _playlists = [];
   SyncStatus _syncStatus = SyncStatus.idle;
   bool _isSyncing = false;
+  bool _isShuffled = false;
   StreamSubscription? _connectivitySub;
 
   MusicProvider({required this.audioHandler}) {
-    // When the player advances a track, repaint the mini-player.
     audioHandler.playingStream.listen((_) => notifyListeners());
+    audioHandler.mediaItem.listen((_) => notifyListeners());
 
-    // Persist resolved durations back to the DB + model list.
     audioHandler.onDurationResolved = (songId, ms) async {
       final idx = _songs.indexWhere((s) => s.id == songId);
       if (idx < 0) return;
@@ -43,16 +44,19 @@ class MusicProvider extends ChangeNotifier {
   SyncStatus get syncStatus => _syncStatus;
   Song? get currentSong => audioHandler.currentSong;
   bool get isPlaying => audioHandler.isPlaying;
+  bool get isShuffled => _isShuffled;
 
   // ── Init ──────────────────────────────────────────────────────
 
   Future<void> init() async {
-    await MusicSyncService.instance.init();
+    try {
+      await MusicSyncService.instance.init();
+    } catch (e) {
+      debugPrint('MusicSyncService init failed (offline / missing key?): $e');
+    }
     await _reload();
-
-    // Initial sync — pulls metadata then files.
+    // On startup, pull from server to get the latest state.
     await sync();
-
     _connectivitySub =
         Connectivity().onConnectivityChanged.listen((results) async {
       if (results.any((r) => r != ConnectivityResult.none)) {
@@ -69,7 +73,8 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> _reload() async {
     _songs = await LocalDb.instance.getAllSongs();
-    _songs.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    _songs.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
     _playlists = await LocalDb.instance.getAllPlaylists();
     for (final pl in _playlists) {
       pl.songIds = await LocalDb.instance.getSongIdsForPlaylist(pl.id);
@@ -77,12 +82,29 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Shuffle ───────────────────────────────────────────────────
+
+  void toggleShuffle() {
+    _isShuffled = !_isShuffled;
+    notifyListeners();
+  }
+
+  List<Song> _maybeShuffled(List<Song> queue, String startId) {
+    if (!_isShuffled) return queue;
+    final list = List<Song>.from(queue);
+    final currentIdx = list.indexWhere((s) => s.id == startId);
+    final current = currentIdx >= 0 ? list.removeAt(currentIdx) : null;
+    list.shuffle(Random());
+    if (current != null) list.insert(0, current);
+    return list;
+  }
+
   // ── Playback ──────────────────────────────────────────────────
 
   Future<void> playSong(Song song, {List<Song>? fromQueue}) async {
-    final queue = (fromQueue ?? _songs)
-        .where((s) => s.hasLocalFile)
-        .toList();
+    final raw =
+        (fromQueue ?? _songs).where((s) => s.hasLocalFile).toList();
+    final queue = _maybeShuffled(raw, song.id);
     final idx = queue.indexWhere((s) => s.id == song.id);
     if (idx < 0) return;
     await audioHandler.setQueue(queue, startIndex: idx);
@@ -91,7 +113,7 @@ class MusicProvider extends ChangeNotifier {
   }
 
   Future<void> playPlaylist(Playlist playlist) async {
-    final songs = playlist.songIds
+    final raw = playlist.songIds
         .map((id) {
           final idx = _songs.indexWhere((s) => s.id == id);
           return idx >= 0 ? _songs[idx] : null;
@@ -99,14 +121,18 @@ class MusicProvider extends ChangeNotifier {
         .whereType<Song>()
         .where((s) => s.hasLocalFile)
         .toList();
-    if (songs.isEmpty) return;
-    await audioHandler.setQueue(songs);
+    if (raw.isEmpty) return;
+    final queue =
+        _isShuffled ? (List<Song>.from(raw)..shuffle(Random())) : raw;
+    await audioHandler.setQueue(queue);
     await audioHandler.play();
     notifyListeners();
   }
 
   Future<void> togglePlay() async {
-    audioHandler.isPlaying ? await audioHandler.pause() : await audioHandler.play();
+    audioHandler.isPlaying
+        ? await audioHandler.pause()
+        : await audioHandler.play();
     notifyListeners();
   }
 
@@ -122,14 +148,12 @@ class MusicProvider extends ChangeNotifier {
 
   // ── Library CRUD ──────────────────────────────────────────────
 
-  /// Opens the file picker, copies the MP3 into app storage, then syncs.
   Future<bool> addSongFromFile() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['mp3'],
     );
     if (result == null || result.files.isEmpty) return false;
-
     final picked = result.files.first;
     final srcPath = picked.path;
     if (srcPath == null) return false;
@@ -152,26 +176,25 @@ class MusicProvider extends ChangeNotifier {
 
     await LocalDb.instance.upsertSong(song);
     await _reload();
-    _backgroundSync();
+    // Push: new song goes to server, MP3 gets uploaded.
+    _pushInBackground();
     return true;
   }
 
-  Future<void> editSong(
-    Song song, {
-    required String title,
-    required String artist,
-  }) async {
+  Future<void> editSong(Song song,
+      {required String title, required String artist}) async {
     song.title = title.trim();
     song.artist = artist.trim();
     song.synced = false;
     song.updatedAt = DateTime.now().toUtc();
     await LocalDb.instance.upsertSong(song);
     await _reload();
-    _backgroundSync();
+    // Push: updated metadata goes to server.
+    _pushInBackground();
   }
 
   Future<void> deleteSong(String songId) async {
-    // Remove from all playlists.
+    // Remove from all playlists locally.
     for (final pl in _playlists) {
       if (pl.songIds.contains(songId)) {
         await LocalDb.instance.removeSongFromPlaylist(pl.id, songId);
@@ -191,7 +214,7 @@ class MusicProvider extends ChangeNotifier {
     await LocalDb.instance.deleteSong(songId);
     await _reload();
 
-    // Tell server to delete too (fire-and-forget).
+    // Push: tell server to delete the song file + record (fire-and-forget).
     MusicSyncService.instance.deleteSong(songId).ignore();
   }
 
@@ -201,7 +224,7 @@ class MusicProvider extends ChangeNotifier {
     final pl = Playlist.create(name.trim());
     await LocalDb.instance.upsertPlaylist(pl);
     await _reload();
-    _backgroundSync();
+    _pushInBackground();
   }
 
   Future<void> renamePlaylist(String id, String name) async {
@@ -211,13 +234,13 @@ class MusicProvider extends ChangeNotifier {
     _playlists[idx].updatedAt = DateTime.now().toUtc();
     await LocalDb.instance.upsertPlaylist(_playlists[idx]);
     await _reload();
-    _backgroundSync();
+    _pushInBackground();
   }
 
   Future<void> deletePlaylist(String id) async {
     await LocalDb.instance.deletePlaylist(id);
     await _reload();
-    _backgroundSync();
+    _pushInBackground();
   }
 
   Future<void> addSongToPlaylist(String playlistId, String songId) async {
@@ -228,10 +251,26 @@ class MusicProvider extends ChangeNotifier {
     _playlists[idx].updatedAt = DateTime.now().toUtc();
     await LocalDb.instance.upsertPlaylist(_playlists[idx]);
     await _reload();
-    _backgroundSync();
+    _pushInBackground();
   }
 
-  Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
+  Future<void> addSongsToPlaylist(
+      String playlistId, List<String> songIds) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx < 0) return;
+    for (final songId in songIds) {
+      if (!_playlists[idx].songIds.contains(songId)) {
+        await LocalDb.instance.addSongToPlaylist(playlistId, songId);
+      }
+    }
+    _playlists[idx].updatedAt = DateTime.now().toUtc();
+    await LocalDb.instance.upsertPlaylist(_playlists[idx]);
+    await _reload();
+    _pushInBackground();
+  }
+
+  Future<void> removeSongFromPlaylist(
+      String playlistId, String songId) async {
     await LocalDb.instance.removeSongFromPlaylist(playlistId, songId);
     final idx = _playlists.indexWhere((p) => p.id == playlistId);
     if (idx >= 0) {
@@ -239,10 +278,16 @@ class MusicProvider extends ChangeNotifier {
       await LocalDb.instance.upsertPlaylist(_playlists[idx]);
     }
     await _reload();
-    _backgroundSync();
+    _pushInBackground();
   }
 
-  // ── Sync ──────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  //  PULL  (git pull) — sync button + on connectivity restore
+  //
+  //  Fetches the server's authoritative state and replaces local
+  //  metadata. Downloads any MP3 files we are missing.
+  //  Does NOT send any local data to the server.
+  // ══════════════════════════════════════════════════════════════
 
   Future<void> sync() async {
     if (_isSyncing) return;
@@ -251,24 +296,24 @@ class MusicProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. Push local metadata → get server-canonical list.
-      final result = await MusicSyncService.instance.pushMetadata(
-        songs: _songs,
-        playlists: _playlists,
-      );
+      // 1. Fetch server's canonical metadata (read-only).
+      final result = await MusicSyncService.instance.pullMetadata();
 
-      // 2. Merge server list into local DB (preserve localPath/synced).
-      await _mergeFromServer(result);
+      // 2. Replace local DB with server data (keeps local file paths).
+      await _applyServerState(result);
 
-      // 3. Upload songs that haven't reached the server yet.
-      await _uploadPending();
+      // 3. Reload so _songs reflects the freshly-written DB rows —
+      //    new server songs (localPath=null, synced=true) are now in the list.
+      await _reload();
 
-      // 4. Download songs the server has that we don't have locally.
+      // 4. Download MP3 files we don't have yet.
       await _downloadMissing();
 
+      // 5. Reload again to pick up the localPaths set by the downloads.
       await _reload();
       _syncStatus = SyncStatus.success;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Pull failed: $e');
       _syncStatus = SyncStatus.error;
     } finally {
       _isSyncing = false;
@@ -276,10 +321,41 @@ class MusicProvider extends ChangeNotifier {
     }
   }
 
-  // ── Sync helpers ──────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  //  PUSH  (git push) — called after every local mutation
+  //
+  //  Sends the full local metadata snapshot to the server so it
+  //  matches what the user has on this device. Also uploads any
+  //  MP3 files that haven't reached the server yet.
+  //  Does NOT touch local data.
+  // ══════════════════════════════════════════════════════════════
 
-  Future<void> _mergeFromServer(MusicSyncResult result) async {
-    // Build a map of what we currently have locally.
+  Future<void> _push() async {
+    // Reload first so we send the freshest snapshot.
+    final songs = await LocalDb.instance.getAllSongs();
+    final playlists = await LocalDb.instance.getAllPlaylists();
+    for (final pl in playlists) {
+      pl.songIds = await LocalDb.instance.getSongIdsForPlaylist(pl.id);
+    }
+
+    await MusicSyncService.instance
+        .pushMetadata(songs: songs, playlists: playlists);
+
+    await _uploadPending();
+  }
+
+  /// Fire-and-forget wrapper — mutations call this and move on.
+  void _pushInBackground() {
+    _push().catchError(
+      (e) => debugPrint('Push failed (will retry on next sync): $e'),
+    );
+  }
+
+  // ── Apply server state ────────────────────────────────────────
+
+  /// Replaces local DB metadata with the server's canonical list.
+  /// Preserves [localPath] and [synced] for songs we already have.
+  Future<void> _applyServerState(MusicSyncResult result) async {
     final existingMap = {for (final s in _songs) s.id: s};
 
     final merged = result.songs.map((serverSong) {
@@ -290,7 +366,12 @@ class MusicProvider extends ChangeNotifier {
         artist: serverSong.artist,
         durationMs: local?.durationMs ?? serverSong.durationMs,
         localPath: local?.localPath,
-        synced: local?.localPath != null, // true only if we have the file
+        // If we already have the song locally, keep its real synced status
+        // (false = upload still pending, true = server confirmed).
+        // If this song is new from the server, synced = true because the
+        // server is the one telling us it exists — _downloadMissing will
+        // then fetch the file.
+        synced: local != null ? local.synced : true,
         createdAt: serverSong.createdAt,
         updatedAt: serverSong.updatedAt,
       );
@@ -307,7 +388,6 @@ class MusicProvider extends ChangeNotifier {
 
     await LocalDb.instance.replaceAllSongs(merged);
 
-    // Merge playlists.
     final mergedPlaylists = result.playlists.map((serverPl) {
       return Playlist(
         id: serverPl.id,
@@ -318,8 +398,11 @@ class MusicProvider extends ChangeNotifier {
       );
     }).toList();
 
-    await LocalDb.instance.replaceAllPlaylists(mergedPlaylists, result.playlistSongs);
+    await LocalDb.instance.replaceAllPlaylists(
+        mergedPlaylists, result.playlistSongs);
   }
+
+  // ── File helpers ──────────────────────────────────────────────
 
   Future<void> _uploadPending() async {
     for (final song in _songs) {
@@ -329,7 +412,7 @@ class MusicProvider extends ChangeNotifier {
           song.synced = true;
           await LocalDb.instance.upsertSong(song);
         } catch (_) {
-          // Will retry on next sync.
+          // Will be retried on the next push.
         }
       }
     }
@@ -338,8 +421,8 @@ class MusicProvider extends ChangeNotifier {
   Future<void> _downloadMissing() async {
     final dir = await _musicDir();
     for (final song in _songs) {
-      final missing = song.localPath == null ||
-          !File(song.localPath!).existsSync();
+      final missing =
+          song.localPath == null || !File(song.localPath!).existsSync();
       if (missing && song.synced) {
         try {
           final destPath = p.join(dir.path, '${song.id}.mp3');
@@ -347,14 +430,10 @@ class MusicProvider extends ChangeNotifier {
           song.localPath = destPath;
           await LocalDb.instance.upsertSong(song);
         } catch (_) {
-          // Will retry on next sync.
+          // Will be retried on the next pull.
         }
       }
     }
-  }
-
-  void _backgroundSync() {
-    sync().ignore();
   }
 
   // ── Utilities ─────────────────────────────────────────────────
@@ -367,7 +446,6 @@ class MusicProvider extends ChangeNotifier {
   }
 
   String _generateId() {
-    // Simple UUID v4-like ID using Dart's built-in randomness.
     const hex = '0123456789abcdef';
     final buf = StringBuffer();
     final rand = DateTime.now().microsecondsSinceEpoch;
