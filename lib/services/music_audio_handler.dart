@@ -112,20 +112,20 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToNext() async {
-    if (_currentIndex < _queue.length - 1) {
-      _currentIndex++;
-      await _loadCurrent();
-      await play();
-    }
+    if (_queue.isEmpty) return;
+    _currentIndex = (_currentIndex + 1) % _queue.length;
+    await _loadCurrent();
+    await play();
   }
 
   @override
   Future<void> skipToPrevious() async {
-    // If more than 3 s in, restart; otherwise go to previous track.
+    if (_queue.isEmpty) return;
+    // If more than 3 s in, restart the current track.
     if (_player.position.inSeconds > 3) {
       await seek(Duration.zero);
-    } else if (_currentIndex > 0) {
-      _currentIndex--;
+    } else {
+      _currentIndex = (_currentIndex - 1 + _queue.length) % _queue.length;
       await _loadCurrent();
       await play();
     }
