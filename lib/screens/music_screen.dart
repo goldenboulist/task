@@ -19,11 +19,13 @@ class MusicScreen extends StatelessWidget {
       length: 2,
       child: Scaffold(
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
           title: const Text('Music',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
           titleSpacing: 16,
           actions: [_SyncButton()],
           bottom: const TabBar(
+            indicatorSize: TabBarIndicatorSize.tab,
             tabs: [
               Tab(icon: Icon(Icons.library_music_outlined), text: 'Library'),
               Tab(icon: Icon(Icons.queue_music_rounded), text: 'Playlists'),
