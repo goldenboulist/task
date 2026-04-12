@@ -19,6 +19,15 @@ A modern, cross-platform task management application built with Flutter. This ap
 - **Study Mode**: Focused learning environment with progress tracking
 - **Category Organization**: Color-coded categories for efficient content management
 - **Cloud Sync**: Synchronize flashcards across devices
+- **Music Player**: Full-featured music player with library and playlist management
+- **Audio Playback**: High-quality audio playback with controls and progress tracking
+- **Music Library**: Import and organize your music collection with metadata support
+- **Playlist Management**: Create, edit, and manage custom playlists
+- **Shuffle Mode**: Randomize playback for diverse listening experience
+- **Mini Player**: Compact player bar for quick controls while navigating the app
+- **Music Sync**: Synchronize music library and playlists across devices
+- **Song Metadata**: Edit and manage song information including title and artist
+- **File Import**: Add MP3 files directly to your music library
 
 ## Technical Architecture
 
@@ -30,23 +39,30 @@ lib/
 ├── models/
 │   ├── task.dart                  # Task data model with JSON serialization
 │   ├── flash_card.dart            # Flashcard data model
-│   └── flash_category.dart        # Flashcard category model
+│   ├── flash_category.dart        # Flashcard category model
+│   ├── song.dart                  # Music track data model
+│   └── playlist.dart              # Playlist data model
 ├── providers/
 │   ├── task_provider.dart         # Task state management (Provider pattern)
-│   └── flash_provider.dart        # Flashcard state management
+│   ├── flash_provider.dart        # Flashcard state management
+│   └── music_provider.dart        # Music player state management
 ├── screens/
 │   ├── home_screen.dart           # Main task management interface
 │   ├── flash_screen.dart          # Flashcard category overview
-│   └── flash_deck_screen.dart     # Individual flashcard deck view
+│   ├── flash_deck_screen.dart     # Individual flashcard deck view
+│   └── music_screen.dart          # Music player interface with library and playlists
 ├── services/
 │   ├── local_db.dart              # SQLite database operations
-│   └── sync_service.dart          # Cloud synchronization service
+│   ├── sync_service.dart          # Cloud synchronization service
+│   ├── music_audio_handler.dart   # Audio playback management
+│   └── music_sync_service.dart    # Music synchronization service
 └── widgets/
     ├── task_card.dart             # Individual task display component
     ├── task_form_dialog.dart      # Add/edit task dialog
     ├── delete_confirm_dialog.dart # Delete confirmation dialog
     ├── flash_card_form_dialog.dart # Add/edit flashcard dialog
-    └── category_form_dialog.dart  # Add/edit category dialog
+    ├── category_form_dialog.dart  # Add/edit category dialog
+    └── mini_player_bar.dart       # Compact music player widget
 ```
 
 ### Technology Stack
@@ -172,6 +188,63 @@ The application includes a comprehensive flashcard learning system designed for 
 - **Visual Learning**: Color-coded categories enhance memory association
 - **Portable Learning**: Access your study materials across all devices
 
+## Music Player System
+
+### Overview
+The application includes a comprehensive music player system designed for seamless audio playback and library management. Perfect for music enthusiasts who want to organize, play, and sync their music collection across devices.
+
+### Key Features
+
+#### Library Management
+- **File Import**: Add MP3 files directly to your music library from device storage
+- **Metadata Support**: Automatic extraction and manual editing of song information
+- **Visual Organization**: Clean grid layout with album art placeholders and song details
+- **Search & Filter**: Quick access to your music collection with intuitive navigation
+- **Sync Status**: Visual indicators for upload/download progress and connectivity
+
+#### Playlist System
+- **Custom Playlists**: Create and manage personalized playlists for different moods
+- **Drag & Drop**: Easy song organization within playlists
+- **Playlist Actions**: Play, shuffle, rename, and delete playlists with simple gestures
+- **Bulk Operations**: Add multiple songs to playlists simultaneously
+- **Smart Suggestions**: Recommended songs based on your listening habits
+
+#### Audio Playback
+- **High-Quality Audio**: Optimized audio engine for clear, crisp sound
+- **Playback Controls**: Play, pause, next, previous, and seek functionality
+- **Shuffle Mode**: Randomize playback order for diverse listening experience
+- **Progress Tracking**: Real-time playback progress with time indicators
+- **Background Play**: Continue listening while using other app features
+
+#### Mini Player
+- **Compact Interface**: Unobtrusive player bar for quick access to controls
+- **Now Playing**: Display current song information with album art
+- **Quick Actions**: Play/pause, skip tracks without leaving current screen
+- **Visual Feedback**: Animated equalizer and progress indicators
+- **Expandable View**: Tap to access full player controls and queue
+
+#### Synchronization
+- **Cloud Sync**: Automatically sync music library and playlists across devices
+- **Offline Mode**: Access downloaded music without internet connection
+- **Progressive Upload**: Background sync with resume capability
+- **Conflict Resolution**: Smart handling of sync conflicts and duplicates
+- **Storage Management**: Efficient use of local and cloud storage
+
+### Usage Workflow
+
+1. **Import Music**: Add MP3 files to build your music library
+2. **Organize Library**: Edit metadata and create custom playlists
+3. **Play Music**: Use the mini player or full player interface
+4. **Manage Playback**: Control playback with shuffle and repeat modes
+5. **Sync Data**: Ensure your collection is backed up and accessible
+
+### Audio Features
+- **Multiple Formats**: Support for MP3 and popular audio formats
+- **Gapless Playback**: Seamless transitions between tracks
+- **Crossfade**: Smooth audio blending between songs
+- **Equalizer**: Audio enhancement with preset and custom settings
+- **Sleep Timer**: Automatic playback stop for bedtime listening
+
 ## Development
 
 ### Key Dependencies
@@ -185,6 +258,10 @@ The application includes a comprehensive flashcard learning system designed for 
 - `connectivity_plus: ^6.0.3` - Network connectivity monitoring
 - `flutter_dotenv: ^5.1.0` - Environment variable management
 - `http: ^1.2.1` - HTTP client for API communication
+- `just_audio: ^0.9.36` - Audio playback engine
+- `audio_service: ^0.18.12` - Background audio service
+- `file_picker: ^8.1.2` - File selection for music import
+- `path_provider: ^2.1.3` - File system access for local storage
 
 ### Database Schema
 
@@ -211,6 +288,24 @@ The application uses SQLite with the following data structures:
 - `id`: Unique identifier (UUID)
 - `name`: Category display name
 - `colorValue`: Color theme for category (Material color)
+- `createdAt`: Creation timestamp
+- `updatedAt`: Last modification timestamp
+
+#### Song Structure
+- `id`: Unique identifier (UUID)
+- `title`: Song title
+- `artist`: Artist name
+- `duration`: Song duration in seconds
+- `filePath`: Local file path for audio
+- `hasLocalFile`: Boolean indicating if file is available locally
+- `synced`: Boolean indicating if song is synced to cloud
+- `createdAt`: Creation timestamp
+- `updatedAt`: Last modification timestamp
+
+#### Playlist Structure
+- `id`: Unique identifier (UUID)
+- `name`: Playlist display name
+- `songIds`: List of song IDs in the playlist
 - `createdAt`: Creation timestamp
 - `updatedAt`: Last modification timestamp
 
