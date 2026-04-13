@@ -59,6 +59,11 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Stream<ProcessingState> get processingStateStream =>
       _player.processingStateStream;
 
+  double get volume => _player.volume;
+  Stream<double> get volumeStream => _player.volumeStream;
+
+  Future<void> setVolume(double volume) => _player.setVolume(volume);
+
   // ── Queue management ──────────────────────────────────────────
 
   /// Replace the current queue and start at [startIndex].

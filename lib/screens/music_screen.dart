@@ -23,7 +23,10 @@ class MusicScreen extends StatelessWidget {
           title: const Text('Music',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
           titleSpacing: 16,
-          actions: [_SyncButton()],
+          actions: [
+            _VolumeButton(),
+            _SyncButton(),
+          ],
           bottom: const TabBar(
             indicatorSize: TabBarIndicatorSize.tab,
             tabs: [
@@ -71,6 +74,88 @@ class _SyncButton extends StatelessWidget {
           onPressed: () => context.read<MusicProvider>().sync(),
         ),
     };
+  }
+}
+
+// ── Volume button ──────────────────────────────────────────────
+
+class _VolumeButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final music = context.watch<MusicProvider>();
+    final volume = music.volume;
+
+    return IconButton(
+      icon: Icon(
+        volume == 0
+            ? Icons.volume_off_rounded
+            : volume < 0.5
+                ? Icons.volume_down_rounded
+                : Icons.volume_up_rounded,
+      ),
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (context) => _VolumeDialog(music: music),
+        );
+      },
+    );
+  }
+}
+
+class _VolumeDialog extends StatelessWidget {
+  final MusicProvider music;
+  const _VolumeDialog({required this.music});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.3,
+          maxHeight: MediaQuery.of(context).size.height * 0.3,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Volume',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 20),
+              ListenableBuilder(
+                listenable: music,
+                builder: (context, _) => Row(
+                  children: [
+                    const Icon(Icons.volume_mute_rounded),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Slider(
+                        value: music.volume,
+                        onChanged: (v) => music.setVolume(v),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    const Icon(Icons.volume_up_rounded),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

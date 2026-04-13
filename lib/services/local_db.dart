@@ -21,15 +21,17 @@ class LocalDb {
     final path = join(await getDatabasesPath(), 'tasks.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, _) async {
         await _createV1(db);
         await _createV2(db);
         await _createV3(db);
+        await _createV4(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
         if (oldVersion < 3) await _createV3(db);
+        if (oldVersion < 4) await _createV4(db);
       },
     );
   }
@@ -99,6 +101,17 @@ class LocalDb {
         PRIMARY KEY (playlist_id, song_id)
       )
     ''');
+  }
+
+  Future<void> _createV4(Database db) async {
+    await db.execute('''
+      CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
+    // Default volume
+    await db.insert('settings', {'key': 'music_volume', 'value': '1.0'});
   }
 
   // ── Tasks ────────────────────────────────────────────────────
@@ -315,6 +328,24 @@ class LocalDb {
       'playlist_songs',
       where: 'playlist_id = ? AND song_id = ?',
       whereArgs: [playlistId, songId],
+    );
+  }
+
+  // ── Settings ──────────────────────────────────────────────────
+
+  Future<String?> getSetting(String key) async {
+    final d = await db;
+    final rows = await d.query('settings', where: 'key = ?', whereArgs: [key]);
+    if (rows.isEmpty) return null;
+    return rows.first['value'] as String;
+  }
+
+  Future<void> saveSetting(String key, String value) async {
+    final d = await db;
+    await d.insert(
+      'settings',
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 }

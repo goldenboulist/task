@@ -26,6 +26,7 @@ class MusicProvider extends ChangeNotifier {
   MusicProvider({required this.audioHandler}) {
     audioHandler.playingStream.listen((_) => notifyListeners());
     audioHandler.mediaItem.listen((_) => notifyListeners());
+    audioHandler.volumeStream.listen((_) => notifyListeners());
 
     audioHandler.onDurationResolved = (songId, ms) async {
       final idx = _songs.indexWhere((s) => s.id == songId);
@@ -45,6 +46,7 @@ class MusicProvider extends ChangeNotifier {
   Song? get currentSong => audioHandler.currentSong;
   bool get isPlaying => audioHandler.isPlaying;
   bool get isShuffled => _isShuffled;
+  double get volume => audioHandler.volume;
 
   // ── Init ──────────────────────────────────────────────────────
 
@@ -57,6 +59,14 @@ class MusicProvider extends ChangeNotifier {
     await _reload();
     // On startup, pull from server to get the latest state.
     await sync();
+
+    // Load persisted volume.
+    final savedVolume = await LocalDb.instance.getSetting('music_volume');
+    if (savedVolume != null) {
+      final vol = double.tryParse(savedVolume);
+      if (vol != null) await audioHandler.setVolume(vol);
+    }
+
     _connectivitySub =
         Connectivity().onConnectivityChanged.listen((results) async {
       if (results.any((r) => r != ConnectivityResult.none)) {
@@ -143,6 +153,12 @@ class MusicProvider extends ChangeNotifier {
 
   Future<void> skipPrevious() async {
     await audioHandler.skipToPrevious();
+    notifyListeners();
+  }
+
+  Future<void> setVolume(double volume) async {
+    await audioHandler.setVolume(volume);
+    await LocalDb.instance.saveSetting('music_volume', volume.toString());
     notifyListeners();
   }
 
