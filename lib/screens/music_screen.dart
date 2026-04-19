@@ -5,6 +5,7 @@ import '../models/playlist.dart';
 import '../providers/music_provider.dart';
 import '../services/sync_service.dart' show SyncStatus;
 import '../widgets/mini_player_bar.dart';
+import '../screens/discover_screen.dart';
 
 // ══════════════════════════════════════════════════════════════
 //  MusicScreen
@@ -16,7 +17,7 @@ class MusicScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: Colors.transparent,
@@ -32,6 +33,7 @@ class MusicScreen extends StatelessWidget {
             tabs: [
               Tab(icon: Icon(Icons.library_music_outlined), text: 'Library'),
               Tab(icon: Icon(Icons.queue_music_rounded), text: 'Playlists'),
+              Tab(icon: Icon(Icons.explore_outlined), text: 'Discover'),
             ],
             labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           ),
@@ -40,6 +42,7 @@ class MusicScreen extends StatelessWidget {
           children: [
             _LibraryTab(),
             _PlaylistsTab(),
+            DiscoverTab(),
           ],
         ),
       ),

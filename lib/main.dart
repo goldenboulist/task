@@ -8,6 +8,7 @@ import 'providers/music_provider.dart';
 import 'services/music_audio_handler.dart';
 import 'screens/home_screen.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'providers/discover_provider.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  main — call runApp() immediately so Android gets a surface
@@ -50,10 +51,13 @@ class _BootstrapApp extends StatelessWidget {
     final musicProvider = MusicProvider(audioHandler: audioHandler);
     await musicProvider.init();
 
+    final discoverProvider = DiscoverProvider(musicProvider);
+
     return _AppDeps(
       taskProvider: taskProvider,
       flashProvider: flashProvider,
       musicProvider: musicProvider,
+      discoverProvider: discoverProvider,
     );
   }
 
@@ -125,6 +129,9 @@ class _BootstrapApp extends StatelessWidget {
               ChangeNotifierProvider.value(value: deps.taskProvider),
               ChangeNotifierProvider.value(value: deps.flashProvider),
               ChangeNotifierProvider.value(value: deps.musicProvider),
+              ChangeNotifierProvider<DiscoverProvider>(
+                create: (_) => snapshot.data!.discoverProvider,
+              ),
             ],
             child: const TaskApp(),
           );
@@ -139,10 +146,12 @@ class _AppDeps {
   final TaskProvider taskProvider;
   final FlashProvider flashProvider;
   final MusicProvider musicProvider;
+  final DiscoverProvider discoverProvider;
   const _AppDeps({
     required this.taskProvider,
     required this.flashProvider,
     required this.musicProvider,
+    required this.discoverProvider,
   });
 }
 

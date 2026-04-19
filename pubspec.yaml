@@ -27,6 +27,7 @@ dependencies:
   path_provider: ^2.1.4
   just_audio_media_kit: ^2.1.0
   media_kit_libs_windows_audio: ^1.0.5
+  youtube_explode_dart: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -38,6 +39,7 @@ flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/bin/yt-dlp.exe
 
 flutter_launcher_icons:
   android: "launcher_icon"

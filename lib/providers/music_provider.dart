@@ -109,6 +109,11 @@ class MusicProvider extends ChangeNotifier {
     return list;
   }
 
+  Future<void> addDiscoveredSong(Song song) async {
+    await LocalDb.instance.upsertSong(song);
+    await _reload();
+    _pushInBackground();
+  }
   // ── Playback ──────────────────────────────────────────────────
 
   Future<void> playSong(Song song, {List<Song>? fromQueue}) async {
